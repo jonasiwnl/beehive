@@ -5,8 +5,24 @@
 #include <CoreGraphics/CoreGraphics.h>
 #endif
 
-using std::cout, std::string;
+using std::cout, std::cin, std::string;
 
+
+uint32_t select_window(uint32_t max_window_count)
+{
+    uint32_t window_id = max_window_count+1;
+
+    while (window_id < 1 || window_id > max_window_count) { // While invalid input
+        cout << "Enter window index to stream from [1 - " << max_window_count << "]: ";
+        if (cin >> window_id) continue;
+        // Bad input. Clear error and input buffer
+        cin.clear();
+        string dmy;
+        cin >> dmy;
+    }
+
+    return window_id-1; // Convert to 0-based index
+}
 
 int main()
 {
@@ -14,8 +30,13 @@ int main()
 
 #ifdef __APPLE__ /* OSX only code. */
     CFArrayRef window_infolist_ref = CGWindowListCopyWindowInfo(
-        kCGWindowListOptionOnScreenOnly + kCGWindowListExcludeDesktopElements + kCGWindowListOptionIncludingWindow, kCGNullWindowID);
+        kCGWindowListOptionOnScreenOnly |
+        kCGWindowListExcludeDesktopElements |
+        kCGWindowListOptionIncludingWindow,
+        kCGNullWindowID
+    );
     CFIndex window_count = CFArrayGetCount(window_infolist_ref);
+    uint32_t active_window_count = 0; // Number of windows that can actually be streamed from
 
     if (window_infolist_ref == NULL) {
         cout << "ERROR: couldn't get window list.\n";
@@ -35,9 +56,13 @@ int main()
 
         CFStringRef window_name_ref = (CFStringRef) CFDictionaryGetValue(window_info_ref, kCGWindowOwnerName);
         cout << CFStringGetCStringPtr(window_name_ref, kCFStringEncodingUTF8) << '\n';
+        ++active_window_count;
     }
 
     CFRelease(window_infolist_ref);
+
+    uint32_t selected_window = select_window(active_window_count);
+    cout << "Selected window: " << selected_window << '\n';
 #endif /* __APPLE__ */
 
     /* TODO 2. Expose a port */
