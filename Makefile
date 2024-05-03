@@ -51,35 +51,6 @@ beehive_valgrind: CXXFLAGS += -g3
 beehive_valgrind:
 	$(CXX) $(CXXFLAGS) $(SOURCES) -o $(EXECUTABLE)_valgrind
 
-$(EXECUTABLE): $(OBJECTS)
-ifneq ($(EXECUTABLE), executable)
-	$(CXX) $(CXXFLAGS) $(OBJECTS) -o $(EXECUTABLE)
-else
-	@echo Edit EXECUTABLE variable in Makefile.
-	@echo Using default a.out.
-	$(CXX) $(CXXFLAGS) $(OBJECTS)
-endif
-
-# names of test executables
-TESTS       = $(TESTSOURCES:%.cpp=%)
-# Automatically generate any build rules for test*.cpp files
-define make_tests
-    ifeq ($$(PROJECTFILE),)
-	    @echo Edit PROJECTFILE variable to .cpp file with main\(\)
-	    @exit 1
-    endif
-    SRCS = $$(filter-out $$(PROJECTFILE), $$(SOURCES))
-    OBJS = $$(SRCS:%.cpp=%.o)
-    HDRS = $$(wildcard *.h *.hpp)
-    $(1): CXXFLAGS += -g3 -DDEBUG
-    $(1): $$(OBJS) $$(HDRS) $(1).cpp
-	$$(CXX) $$(CXXFLAGS) $$(OBJS) $(1).cpp -o $(1)
-endef
-$(foreach test, $(TESTS), $(eval $(call make_tests, $(test))))
-
-alltests: $(TESTS)
-.PHONY: alltests
-
 # make clean - remove .o files, executables, tarball
 clean:
 	rm -Rf *.dSYM
