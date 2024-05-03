@@ -1,0 +1,9 @@
+*.gz
+*.o
+*.dSYM/
+beehive
+beehive_debug
+beehive_release
+beehive_valgrind
+.vscode
+.DS_Store
