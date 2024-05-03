@@ -1,11 +1,17 @@
 #include <iostream>
 #include <string>
+#include <iostream>
+#include <cstring>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
 
 #ifdef __APPLE__
 #include <CoreGraphics/CoreGraphics.h>
 #endif
 
-using std::cout, std::cin, std::string;
+using std::cout, std::cin, std::cerr, std::string;
 
 
 uint32_t select_window(uint32_t max_window_count)
@@ -67,6 +73,11 @@ int main()
 #endif /* __APPLE__ */
 
     /* TODO 2. Expose a port */
+    int client_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (client_socket < 0) {
+        cerr << "Error creating socket\n";
+        return 1;
+    } /* TODO continue*/
 
     /* TODO 3. Listen for connections and accept them (as well as for interrupt) */
 
