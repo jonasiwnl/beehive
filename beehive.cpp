@@ -45,7 +45,7 @@ int main()
     uint32_t active_window_count = 0; // Number of windows that can actually be streamed from
 
     if (window_infolist_ref == NULL) {
-        cout << "ERROR: couldn't get window list.\n";
+        cerr << "ERROR: couldn't get window list.\n";
         return 1;
     }
 
@@ -77,11 +77,13 @@ int main()
     if (client_socket < 0) {
         cerr << "Error creating socket\n";
         return 1;
-    } /* TODO continue*/
+    } /* TODO continue this */
 
     /* TODO 3. Listen for connections and accept them (as well as for interrupt) */
 
     /* TODO 4. Stream window to connections */
+
+    close(client_socket);
 
     return 0;
 }
