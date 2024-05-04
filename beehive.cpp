@@ -43,45 +43,50 @@ struct ClientSocket {
         handlers.reserve(MAX_CONNECTIONS);
     }
 
-    void listen()
+    /* Listen for new connections, accept them, and handle with a separate thread. */
+    void listen_and_accept()
     {
-        thread quit_listener(&ClientSocket::listen_for_quit, this);
+        thread quit_listener(&ClientSocket::wait_for_quit_input, this);
         while (server_up_flag) {
             int client = accept(client_socket, NULL, NULL);
             if (client < 0) {
                 error_message = "Error accepting connection\n";
-                return;
+                server_up_flag = false;
+                break;
             }
 
             /* Spin up a thread for each client. */
-            thread handler = thread(&ClientSocket::handle_client, this, client);
-            handlers.push_back(std::move(handler));
+            handlers.emplace_back(thread(&ClientSocket::handle_client, this, client));
         }
         quit_listener.join();
-        cleanup_threads();
+        cleanup_handler_threads();
     }
 
-    void listen_for_quit()
+    /* when the user types "q" or "quit", end execution of the server (stop streaming.) */
+    void wait_for_quit_input()
     {
+        string input;
         while (server_up_flag) {
-            string input;
             cin >> input;
-            if (input == "quit") server_up_flag = false;
+            if (input == "q" || input == "quit") server_up_flag = false;
         }
     }
 
     void handle_client(int client_socket)
     {
         string message = "What up\n";
-        while (true) {
+        while (server_up_flag) {
+            /* TODO (jonas): how can client disconnects be handled */
             send(client_socket, message.c_str(), message.size(), 0);
             sleep(1);
         }
     }
 
-    void cleanup_threads()
+    void cleanup_handler_threads()
     {
         for (auto& handler : handlers)
+            // These threads should be done executing, as server_up_flag is false
+            // So join *should be* safe here
             handler.join();
     }
 };
@@ -136,7 +141,7 @@ int main()
 
     /* TODO 3. Listen for connections and accept them (as well as for interrupt) */
     ClientSocket cs = ClientSocket(client_socket);
-    cs.listen();
+    cs.listen_and_accept();
 
     if (!cs.error_message.empty()) {
         cerr << cs.error_message;
