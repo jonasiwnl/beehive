@@ -1,17 +1,19 @@
 #include <iostream>
 #include <string>
-#include <iostream>
-#include <cstring>
+#include <vector>
+#include <thread>
+#include <atomic>
 #include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
 
 #ifdef __APPLE__
 #include <CoreGraphics/CoreGraphics.h>
 #endif
 
-using std::cout, std::cin, std::cerr, std::string;
+#define MAX_CONNECTIONS 10
+
+using std::cout, std::cin, std::cerr; // IO
+using std::string, std::vector; // Containers
+using std::thread, std::atomic; // Multithreading
 
 
 uint32_t select_window(uint32_t max_window_count)
@@ -29,6 +31,60 @@ uint32_t select_window(uint32_t max_window_count)
 
     return window_idx-1; // Convert to 0-based index
 }
+
+struct ClientSocket {
+    atomic<bool> server_up_flag;
+    int client_socket;
+    vector<thread> handlers;
+    string error_message;
+
+    ClientSocket(int client_socket_in): server_up_flag(true), client_socket(client_socket_in)
+    {
+        handlers.reserve(MAX_CONNECTIONS);
+    }
+
+    void listen()
+    {
+        thread quit_listener(&ClientSocket::listen_for_quit, this);
+        while (server_up_flag) {
+            int client = accept(client_socket, NULL, NULL);
+            if (client < 0) {
+                error_message = "Error accepting connection\n";
+                return;
+            }
+
+            /* Spin up a thread for each client. */
+            thread handler = thread(&ClientSocket::handle_client, this, client);
+            handlers.push_back(std::move(handler));
+        }
+        quit_listener.join();
+        cleanup_threads();
+    }
+
+    void listen_for_quit()
+    {
+        while (server_up_flag) {
+            string input;
+            cin >> input;
+            if (input == "quit") server_up_flag = false;
+        }
+    }
+
+    void handle_client(int client_socket)
+    {
+        string message = "What up\n";
+        while (true) {
+            send(client_socket, message.c_str(), message.size(), 0);
+            sleep(1);
+        }
+    }
+
+    void cleanup_threads()
+    {
+        for (auto& handler : handlers)
+            handler.join();
+    }
+};
 
 int main()
 {
@@ -68,8 +124,7 @@ int main()
 
     CFRelease(window_infolist_ref);
 
-    uint32_t selected_window_idx = select_window(active_window_count);
-    cout << "Selected window: " << selected_window_idx << '\n';
+    // uint32_t selected_window_idx = select_window(active_window_count);
 #endif /* __APPLE__ */
 
     /* TODO 2. Expose a port */
@@ -80,6 +135,13 @@ int main()
     } /* TODO continue this */
 
     /* TODO 3. Listen for connections and accept them (as well as for interrupt) */
+    ClientSocket cs = ClientSocket(client_socket);
+    cs.listen();
+
+    if (!cs.error_message.empty()) {
+        cerr << cs.error_message;
+        return 1;
+    }
 
     /* TODO 4. Stream window to connections */
 
