@@ -6,19 +6,23 @@
 #include <sys/socket.h>
 
 #ifdef __APPLE__
+#include <CoreFoundation/CoreFoundation.h>
+#include <CoreServices/CoreServices.h>
 #include <CoreGraphics/CoreGraphics.h>
+#include <ImageIO/ImageIO.h>
 #endif
 
 #define MAX_CONNECTIONS 10
+#define OUTPUT_PATH "output/output.jpg"
 
 using std::cout, std::cin, std::cerr; // IO
 using std::string, std::vector; // Containers
 using std::thread, std::atomic; // Multithreading
 
 
-uint32_t select_window(uint32_t max_window_count)
+size_t select_window(size_t max_window_count)
 {
-    uint32_t window_idx = max_window_count+1;
+    size_t window_idx = max_window_count+1;
 
     while (window_idx < 1 || window_idx > max_window_count) { // While invalid input
         cout << "Enter window index to stream from [1 - " << max_window_count << "]: ";
@@ -103,7 +107,9 @@ int main()
         kCGNullWindowID
     );
     CFIndex window_count = CFArrayGetCount(window_infolist_ref);
-    uint32_t active_window_count = 0; // Number of windows that can actually be streamed from
+
+    /* Window IDs that can actually be streamed from */
+    vector<CFNumberRef> active_window_ids;
 
     if (window_infolist_ref == NULL) {
         cerr << "ERROR: couldn't get window list.\n";
@@ -122,20 +128,51 @@ int main()
         if (window_layer > 1) continue; /* Skip windows that are not at the top layer. */
 
         CFStringRef window_name_ref = (CFStringRef) CFDictionaryGetValue(window_info_ref, kCGWindowOwnerName);
-        active_window_count++;
-        cout << active_window_count << ". " << CFStringGetCStringPtr(window_name_ref, kCFStringEncodingUTF8) << '\t';
+        /* This window can be streamed from. */
+        active_window_ids.push_back((CFNumberRef) CFDictionaryGetValue(window_info_ref, kCGWindowNumber));
+        cout << active_window_ids.size() << ". "
+            << CFStringGetCStringPtr(window_name_ref, kCFStringEncodingUTF8) << "      ";
     }
     cout << '\n';
 
-    CFRelease(window_infolist_ref);
+    /* Get ID of selected window. */
+    size_t selected_window_idx = select_window(active_window_ids.size());
+    CFNumberRef window_id_ref = active_window_ids[selected_window_idx];
+    CGWindowID selected_window_id;
+    CFNumberGetValue(window_id_ref, kCGWindowIDCFNumberType, &selected_window_id);
 
-    // uint32_t selected_window_idx = select_window(active_window_count);
+    CGImageRef img = CGWindowListCreateImage(
+        CGRectNull, /* CGRectNull means capture minimum size needed in order to capture window */
+        kCGWindowListExcludeDesktopElements | kCGWindowListOptionIncludingWindow,
+        selected_window_id,
+        kCGWindowImageBestResolution
+    );
+
+    /* Now, we set up disk IO. */
+    CFStringRef output_path =
+        CFStringCreateWithCString(kCFAllocatorDefault, OUTPUT_PATH, kCFStringEncodingUTF8);
+    CFURLRef url = CFURLCreateWithFileSystemPath(kCFAllocatorDefault, output_path, kCFURLPOSIXPathStyle, false);
+    CGImageDestinationRef dest = CGImageDestinationCreateWithURL(url, kUTTypeJPEG, 1, NULL);
+
+    /* The NULL is addl properties, might be good to look into */
+    CGImageDestinationAddImage(dest, img, NULL);
+    bool write_success = CGImageDestinationFinalize(dest); /* Write to disk. */
+
+    // Clean up memory
+    CFRelease(window_infolist_ref);
+    CFRelease(dest);
+    CGImageRelease(img);
+
+    if (!write_success) {
+        cerr << "ERROR: couldn't create or write image.\n";
+        return 1;
+    }
 #endif /* __APPLE__ */
 
     /* TODO 2. Expose a port */
     int client_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (client_socket < 0) {
-        cerr << "Error creating socket\n";
+        cerr << "ERROR: couldn't create socket.\n";
         return 1;
     } /* TODO continue this */
 

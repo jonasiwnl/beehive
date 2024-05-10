@@ -23,7 +23,7 @@ SOURCES     := $(filter-out $(TESTSOURCES), $(SOURCES))
 OBJECTS     = $(SOURCES:%.cpp=%.o)
 
 # Default Flags
-CXXFLAGS = -std=c++17 -Wconversion -Wall -Wextra -pedantic -framework CoreFoundation -framework CoreGraphics
+CXXFLAGS = -std=c++17 -Wconversion -Wall -Wextra -pedantic -framework CoreFoundation -framework CoreGraphics -framework ImageIO -framework CoreServices
 
 # Build all executables
 all: debug release valgrind
