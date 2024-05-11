@@ -54,7 +54,7 @@ struct ClientSocket {
         while (server_up_flag) {
             int client = accept(client_socket, NULL, NULL);
             if (client < 0) {
-                error_message = "Error accepting connection\n";
+                error_message = "ERROR: couldn't accept connection.\n";
                 server_up_flag = false;
                 break;
             }
@@ -179,6 +179,7 @@ int main()
     /* TODO 3. Listen for connections and accept them (as well as for interrupt) */
     ClientSocket cs = ClientSocket(client_socket);
     cs.listen_and_accept();
+    close(client_socket);
 
     if (!cs.error_message.empty()) {
         cerr << cs.error_message;
@@ -186,8 +187,6 @@ int main()
     }
 
     /* TODO 4. Stream window to connections */
-
-    close(client_socket);
 
     return 0;
 }
