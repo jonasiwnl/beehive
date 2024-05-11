@@ -39,16 +39,16 @@ valgrind:
 
 # make debug - will compile sources with $(CXXFLAGS) -g3 and -fsanitize
 #              flags also defines DEBUG and _GLIBCXX_DEBUG
-beehive_debug: beehive.cpp
+beehive_debug: beehive.cpp screencapture.cpp
 	$(CXX) $(CXXFLAGS) -g3 -DDEBUG -fsanitize=address -fsanitize=undefined -D_GLIBCXX_DEBUG $(SOURCES) -o $(EXECUTABLE)_debug
 
-beehive_release: beehive.cpp
+beehive_release: beehive.cpp screencapture.cpp
 	$(CXX) $(CXXFLAGS) -O3 $(SOURCES) -o $(EXECUTABLE)_release
 
 # make valgrind - will compile sources with $(CXXFLAGS) -g3 suitable for
 #                 CAEN or WSL (DOES NOT WORK ON MACOS).
 beehive_valgrind: CXXFLAGS += -g3
-beehive_valgrind:
+beehive_valgrind: beehive.cpp screencapture.cpp
 	$(CXX) $(CXXFLAGS) $(SOURCES) -o $(EXECUTABLE)_valgrind
 
 # make clean - remove .o files, executables, tarball
