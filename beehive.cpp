@@ -6,12 +6,12 @@
 #include <sys/socket.h>
 #include "screencapture.cpp"
 
-#define MAX_CONNECTIONS 10
-
 using std::cout, std::cin, std::cerr; // IO
 using std::string, std::vector; // Containers
 using std::thread, std::atomic; // Multithreading
 
+
+constexpr uint16_t MAX_CONNECTIONS = 10;
 
 struct ClientHandler {
     atomic<bool> server_up_flag;
@@ -85,6 +85,8 @@ int main()
         cerr << "ERROR: couldn't select window to stream from.\n";
         return 1;
     }
+
+    capturer.osx_stream();
 #endif
 
     /* TODO 2. Expose a port */
@@ -103,15 +105,6 @@ int main()
         cerr << cs.error_message;
         return 1;
     }
-
-    /* TODO 4. Stream window to connections */
-#ifdef __APPLE__
-    success = capturer.osx_save_image();
-    if (!success) {
-        cerr << "ERROR: couldn't save window image to disk.\n";
-        return 1;
-    }
-#endif
 
     return 0;
 }
