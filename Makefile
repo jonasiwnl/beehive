@@ -51,9 +51,19 @@ beehive_valgrind: CXXFLAGS += -g3
 beehive_valgrind: beehive.cpp screencapture.cpp
 	$(CXX) $(CXXFLAGS) $(SOURCES) -o $(EXECUTABLE)_valgrind
 
-# make clean - remove .o files, executables, tarball
 clean:
+	make clean_files
+	make clean_output
+.PHONY: clean
+
+# make clean_files - remove .o files, executables, tarball
+clean_files:
 	rm -Rf *.dSYM
 	rm -f $(OBJECTS) $(EXECUTABLE) $(EXECUTABLE)_debug
+	rm -f $(EXECUTABLE)_release
 	rm -f $(EXECUTABLE)_valgrind
-.PHONY: clean
+.PHONY: clean_files
+
+clean_output:
+	rm -f output/*
+.PHONY: clean_output

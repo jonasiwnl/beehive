@@ -24,7 +24,7 @@ struct ClientHandler {
         handlers.reserve(MAX_CONNECTIONS);
     }
 
-    /* Listen for new connections, accept them, and handle with a separate thread. */
+    // Listen for new connections, accept them, and handle with a separate thread.
     void listen_and_accept()
     {
         thread quit_listener(&ClientHandler::wait_for_quit_input, this);
@@ -36,14 +36,14 @@ struct ClientHandler {
                 break;
             }
 
-            /* Spin up a thread for each client. */
+            // Spin up a thread for each client.
             handlers.emplace_back(thread(&ClientHandler::handle_client, this, client));
         }
         quit_listener.join();
         cleanup_handler_threads();
     }
 
-    /* when the user types "q" or "quit", end execution of the server (stop streaming.) */
+    // when the user types "q" or "quit", end execution of the server (stop streaming.)
     void wait_for_quit_input()
     {
         string input;
@@ -86,15 +86,17 @@ int main()
         return 1;
     }
 
-    capturer.osx_stream();
+    capturer.capture();
 #endif
+
+    return 0; // This is the end of video capture code. Stuff beyond is under construction
 
     /* TODO 2. Expose a port */
     int client_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (client_socket < 0) {
         cerr << "ERROR: couldn't create socket.\n";
         return 1;
-    } /* TODO continue this */
+    }
 
     /* TODO 3. Listen for connections and accept them (as well as for interrupt) */
     ClientHandler cs = ClientHandler(client_socket);
