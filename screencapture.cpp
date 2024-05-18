@@ -10,18 +10,25 @@
 #include <CoreServices/CoreServices.h>
 #include <CoreGraphics/CoreGraphics.h>
 #include <ImageIO/ImageIO.h>
+#elif _WIN32
+#include <stdio.h> // _popen, _pclose
 #endif
 
-using std::cout, std::cin, std::cerr;
-using std::string, std::to_string, std::vector, std::pair;
-using std::this_thread::sleep_for, std::chrono::milliseconds, std::atomic, std::thread;
+using std::cout, std::cin, std::cerr; // IO
+using std::string, std::to_string, std::vector, std::pair; // Containers
+using std::atomic, std::thread; // Multithreading
+using std::chrono::high_resolution_clock, std::chrono::milliseconds; // Timing
 
 
-constexpr auto OUTPUT_PATH = "output/output.jpg";
-constexpr auto FPS = 20;
-// constexpr auto OUTPUT_STREAM = "rtsp://localhost:8554/stream";
+constexpr auto MPEG4_OUTPUT = "-vcodec mpeg4 output/video.mp4";
+constexpr auto MPEGTS_OUTPUT = "-vcodec libx264 -preset ultrafast output/video.ts";
+constexpr auto STREAM_OUTPUT = "-f flv rtmp://localhost:3000/stream";
+
+constexpr auto FPS = 60;
+const auto FRAME_DURATION_MS = 1000 / FPS;
 
 struct ScreenCapture {
+    // ---- CROSS PLATFORM CODE ---- //
     atomic<bool> server_up_flag;
     size_t window_height;
     size_t window_width;
@@ -50,6 +57,9 @@ struct ScreenCapture {
         return window_idx-1; // Convert to 0-based index
     }
 
+    /*
+     * Allows for easy program termination without SIGINT.
+     */
     void wait_for_quit_input()
     {
         string input;
@@ -59,16 +69,72 @@ struct ScreenCapture {
         }
     }
 
-#ifdef __APPLE__ /* OSX only code. */
+    /*
+     * capture starts capturing video from selected window using ffmpeg.
+     * it runs until 'q' or 'quit' is typed.
+     */
+    bool capture()
+    {
+        string dimensions = to_string(window_width) + 'x' + to_string(window_height);
+        string ffmpeg_cmd =
+            "ffmpeg -hide_banner -y -f rawvideo -video_size " + dimensions +
+            " -pix_fmt bgra -re -i - -r " + to_string(FPS) + ' ' + MPEG4_OUTPUT;
+    #ifdef _WIN32
+        FILE* streampipe = _popen(ffmpeg_cmd.c_str(), "wb");
+    #else
+        FILE* streampipe = popen(ffmpeg_cmd.c_str(), "w");
+    #endif
+
+        thread quit_listener(&ScreenCapture::wait_for_quit_input, this);
+
+        while (server_up_flag) {
+            auto start_time = high_resolution_clock::now();
+
+            // ---- image piping ---- //
+        #ifdef __APPLE__
+            osx_pipe_image(streampipe);
+        #endif
+            // ---- end image piping ---- //
+
+            auto end_time = high_resolution_clock::now();
+            auto elapsed_time = end_time - start_time;
+
+            // convert elapsed time to milliseconds and subtract from max amount
+            long remaining_time_ms = FRAME_DURATION_MS - elapsed_time / milliseconds(1);
+
+            // If the image piping was too slow, don't sleep and just continue
+            if (remaining_time_ms <= 0) 
+                continue;
+
+            // Otherwise, sleep a bit to prevent unnecessary overhead
+            // 3/4 is just an arbitrary number I picked, I don't want to oversleep
+            std::this_thread::sleep_for(milliseconds( remaining_time_ms * 3/4 ));
+        }
+
+        quit_listener.join();
+    #ifdef _WIN32
+        _pclose(streampipe);
+    #else
+        pclose(streampipe);
+    #endif
+
+        return true;
+    }
+    // ---- END CROSS PLATFORM CODE ---- //
+
+#ifdef __APPLE__ // ---- OSX ONLY ---- //
     CGWindowID selected_window_id;
 
     /*
-     * osx_pipe_image captures a single image and pipes it to ffmpeg.
+     * osx_pipe_image captures a single image on OSX using the CoreGraphics.h library
+     * and pipes it to the `streampipe` argument.
+     * 
+     * Returns: boolean indicating whether the image could be created
      */
     bool osx_pipe_image(FILE* streampipe)
     {
         CGImageRef img = CGWindowListCreateImage(
-            CGRectNull, /* CGRectNull means capture minimum size needed in order to capture window */
+            CGRectNull, // CGRectNull means capture minimum size needed in order to capture window
             kCGWindowListExcludeDesktopElements | kCGWindowListOptionIncludingWindow,
             selected_window_id,
             kCGWindowImageBestResolution | kCGWindowImageBoundsIgnoreFraming
@@ -94,30 +160,6 @@ struct ScreenCapture {
     }
 
     /*
-     * osx_stream starts an output stream using ffmpeg.
-     */
-    bool osx_stream()
-    {
-        string dimensions = to_string(window_width) + 'x' + to_string(window_height);
-        string ffmpeg_cmd =
-            "ffmpeg -hide_banner -y -f rawvideo -video_size " + dimensions +
-            " -pix_fmt bgra -r 10 -i - -vcodec mpeg4 -r 10 output/video.mp4";
-        FILE* streampipe = popen(ffmpeg_cmd.c_str(), "w");
-
-        thread quit_listener(&ScreenCapture::wait_for_quit_input, this);
-
-        while (server_up_flag) {
-            osx_pipe_image(streampipe);
-            sleep_for(milliseconds(100));
-        }
-
-        quit_listener.join();
-        pclose(streampipe);
-
-        return true;
-    }
-
-    /*
      * osx_display_active_windows displays a list of user windows that can be streamed from on OSX,
      * using the CoreGraphics.h library.
      *
@@ -133,7 +175,7 @@ struct ScreenCapture {
         );
         CFIndex window_count = CFArrayGetCount(window_infolist_ref);
 
-        /* Window IDs that can actually be streamed from and their bounds, as a dict */
+        // Window IDs that can actually be streamed from and their bounds, as a dict
         vector<pair<CFNumberRef, CFDictionaryRef>> active_window_ids;
 
         if (window_infolist_ref == NULL) {
@@ -141,19 +183,19 @@ struct ScreenCapture {
             return false;
         }
 
-        /* Iterate through window info list and print the name if it exists. */
+        // Iterate through window info list and print the name if it exists.
         for (CFIndex idx = 0; idx < window_count; ++idx) {
             CFDictionaryRef window_info_ref = (CFDictionaryRef) CFArrayGetValueAtIndex(window_infolist_ref, idx);
-            /* If the window doesn't have a name, skip */
+            // If the window doesn't have a name, skip
             if (!CFDictionaryContainsKey(window_info_ref, kCGWindowOwnerName)) continue;
 
             int window_layer;
             CFNumberRef window_layer_ref = (CFNumberRef) CFDictionaryGetValue(window_info_ref, kCGWindowLayer);
             CFNumberGetValue(window_layer_ref, kCFNumberIntType, &window_layer);
-            if (window_layer > 1) continue; /* Skip windows that are not at the top layer. */
+            if (window_layer > 1) continue; // Skip windows that are not at the top layer.
 
             CFStringRef window_name_ref = (CFStringRef) CFDictionaryGetValue(window_info_ref, kCGWindowOwnerName);
-            /* This window can be streamed from. */
+            // This window can be streamed from.
             active_window_ids.push_back({ (CFNumberRef) CFDictionaryGetValue(window_info_ref, kCGWindowNumber),
                                           (CFDictionaryRef) CFDictionaryGetValue(window_info_ref, kCGWindowBounds) });
             cout << active_window_ids.size() << ". "
@@ -161,7 +203,7 @@ struct ScreenCapture {
         }
         cout << '\n';
 
-        /* Get ID of selected window. */
+        // Get ID of selected window.
         size_t selected_window_idx = user_select_window_idx(active_window_ids.size());
         pair<CFNumberRef, CFDictionaryRef> window_id_and_bounds = active_window_ids[selected_window_idx];
         CFNumberGetValue(window_id_and_bounds.first, kCGWindowIDCFNumberType, &selected_window_id);
@@ -172,7 +214,7 @@ struct ScreenCapture {
         window_height = static_cast<size_t>(CGRectGetHeight(window_bounds)*2);
         window_width = static_cast<size_t>(CGRectGetWidth(window_bounds)*2);
 
-        /* Clean up memory */
+        // Clean up memory
         CFRelease(window_infolist_ref);
 
         return true;
@@ -205,6 +247,6 @@ struct ScreenCapture {
         else
             std::cout<<"Error: "<<err<<std::endl;
     } */
-#endif /* __APPLE__ */
+#endif // ---- END OSX ONLY ---- //
 
 };
