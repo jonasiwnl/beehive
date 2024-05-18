@@ -12,6 +12,7 @@
 #include <ImageIO/ImageIO.h>
 #elif _WIN32
 #include <stdio.h> // _popen, _pclose
+#include <Windows.h>
 #endif
 
 using std::cout, std::cin, std::cerr; // IO
@@ -26,6 +27,30 @@ constexpr auto STREAM_OUTPUT = "-f flv rtmp://localhost:3000/stream";
 
 constexpr auto FPS = 60;
 const auto FRAME_DURATION_MS = 1000 / FPS;
+
+#ifdef _WIN32 // This function must be global to pass as a function ptr to EnumWindows.
+// https://stackoverflow.com/questions/10246444/how-can-i-get-enumwindows-to-list-all-windows
+BOOL CALLBACK enum_window_callback(HWND hwnd, LPARAM active_window_ids_void_ptr) {
+    int length = GetWindowTextLength(hwnd) + 1;
+    char * buffer = new char[length];
+    GetWindowText(hwnd, buffer, length);
+    string window_title(buffer);
+    delete[] buffer;
+
+    // If the window is not visible, or is minimized, or has no title, or is system app, don't include it.
+    if (!IsWindowVisible(hwnd) || IsIconic(hwnd) || window_title.empty() ||
+        window_title == "Program Manager" || window_title == "Setup" ||
+        window_title == "Microsoft Text Input Application")
+        return TRUE;
+
+    vector<HWND> * active_window_ids_ptr = reinterpret_cast<vector<HWND>*>(active_window_ids_void_ptr);
+
+    cout << active_window_ids_ptr->size() + 1 << ":  " << window_title << "      ";
+    active_window_ids_ptr->push_back(hwnd);
+
+    return TRUE;
+}
+#endif
 
 struct ScreenCapture {
     // ---- CROSS PLATFORM CODE ---- //
@@ -87,20 +112,32 @@ struct ScreenCapture {
 
         thread quit_listener(&ScreenCapture::wait_for_quit_input, this);
 
+        bool success;
+        high_resolution_clock::time_point start_time, end_time;
+        long long remaining_time_ms;
+
         while (server_up_flag) {
-            auto start_time = high_resolution_clock::now();
+            start_time = high_resolution_clock::now();
 
             // ---- image piping ---- //
         #ifdef __APPLE__
-            osx_pipe_image(streampipe);
+            success = osx_pipe_image(streampipe);
+        #elif _WIN32
+            success = windows_pipe_image(streampipe);
         #endif
+
+            if (!success) {
+                cerr << "Couldn't pipe image. Continuing.\n";
+                continue;
+            }
+
             // ---- end image piping ---- //
 
-            auto end_time = high_resolution_clock::now();
-            auto elapsed_time = end_time - start_time;
+            end_time = high_resolution_clock::now();
 
             // convert elapsed time to milliseconds and subtract from max amount
-            long remaining_time_ms = FRAME_DURATION_MS - elapsed_time / milliseconds(1);
+            remaining_time_ms = FRAME_DURATION_MS - (end_time - start_time) / milliseconds(1);
+            
 
             // If the image piping was too slow, don't sleep and just continue
             if (remaining_time_ms <= 0) 
@@ -129,7 +166,7 @@ struct ScreenCapture {
      * osx_pipe_image captures a single image on OSX using the CoreGraphics.h library
      * and pipes it to the `streampipe` argument.
      * 
-     * Returns: boolean indicating whether the image could be created
+     * Returns: boolean indicating whether or not the image could be created
      */
     bool osx_pipe_image(FILE* streampipe)
     {
@@ -219,34 +256,41 @@ struct ScreenCapture {
 
         return true;
     }
+#endif // ---- END OSX ONLY ---- //
+
+#ifdef _WIN32 // ---- Windows ONLY ---- //
+    HWND selected_window_id;
 
     /*
-    // Using CGDisplayStream might be more efficient. Test this!
-    void record_for_three_seconds()
+     * windows_pipe_image captures a single image on Windows
+     * and pipes it to the `streampipe` argument.
+     * 
+     * Returns: boolean indicating whether or not the image could be created
+     */
+    bool windows_pipe_image(FILE* streampipe)
     {
-        CGRect mainMonitor = CGDisplayBounds(CGMainDisplayID());
-        CGFloat monitorHeight = CGRectGetHeight(mainMonitor);
-        CGFloat monitorWidth = CGRectGetWidth(mainMonitor);
-        const void *keys[1] = { kCGDisplayStreamSourceRect };
-        const void *values[1] = { CGRectCreateDictionaryRepresentation(CGRectMake(0, 0, 100, 100)) };
+        return true; // TODO
+    }
 
-        CFDictionaryRef properties = CFDictionaryCreate(NULL, keys, values, 1, NULL, NULL);
+    /*
+     * windows_display_active_windows displays a list of user windows that can be streamed from on Windows,
+     * using the Windows.h library.
+     *
+     * Returns: bool indicating whether or not this function succeeded.
+     */
+    bool windows_display_active_windows()
+    {
+        vector<HWND> active_window_ids;
 
-        CGDisplayStreamRef stream = CGDisplayStreamCreate(CGMainDisplayID(), monitorWidth, monitorHeight, '420f' , properties,  ^(CGDisplayStreamFrameStatus status, uint64_t displayTime, IOSurfaceRef frameSurface, CGDisplayStreamUpdateRef updateRef){});
+        EnumDesktopWindows(NULL, enum_window_callback, reinterpret_cast<LPARAM>(&active_window_ids));
+        cout << '\n';
 
-        CGDirectDisplayID displayID = CGMainDisplayID();
-        CGImageRef image_create = CGDisplayCreateImage(displayID);
+        size_t selected_window_idx = user_select_window_idx(active_window_ids.size());
+        selected_window_id = active_window_ids[selected_window_idx];
 
-        CFRunLoopSourceRef runLoop = CGDisplayStreamGetRunLoopSource(stream);
+        return true;
+    }
 
-    // CFRunLoopAddSource(<#CFRunLoopRef rl#>, runLoop, <#CFRunLoopMode mode#>);
-
-        CGError err = CGDisplayStreamStart(stream);
-        if (err == CGDisplayNoErr)
-            sleep(5);
-        else
-            std::cout<<"Error: "<<err<<std::endl;
-    } */
-#endif // ---- END OSX ONLY ---- //
+#endif // ---- Windows ONLY ---- //
 
 };

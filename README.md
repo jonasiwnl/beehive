@@ -15,5 +15,6 @@ with my minimal testing, i've found that mpeg4 generally has lower overhead, but
 - Sometimes get bad packets error when quitting ffmpeg
 
 ## Performance stuff to test
+- producer and consumer threads for creating images and piping them
 - CGDisplayStream vs individual CGWindowListCreateImage calls
 - kCGWindowImageNominalResolution vs kCGWindowImageBestResolution
