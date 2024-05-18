@@ -13,17 +13,20 @@ CXX         = g++
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $*.cpp
 
-# list of test drivers (with main()) for development
-TESTSOURCES = $(wildcard test*.cpp)
-
 # list of sources used in project
-SOURCES     = $(wildcard *.cpp)
-SOURCES     := $(filter-out $(TESTSOURCES), $(SOURCES))
+SOURCES = beehive.cpp
 # list of objects used in project
 OBJECTS     = $(SOURCES:%.cpp=%.o)
 
 # Default Flags
-CXXFLAGS = -std=c++17 -Wconversion -Wall -Wextra -pedantic -framework CoreFoundation -framework CoreGraphics -framework ImageIO -framework CoreServices
+DEFAULTFLAGS = -std=c++17 -Wconversion -Wall -Wextra -pedantic
+
+ifdef APPLE
+OSXFLAGS = -framework CoreFoundation -framework CoreGraphics -framework ImageIO -framework CoreServices
+CXXFLAGS = $(DEFAULTFLAGS) $(OSXFLAGS)
+else
+CXXFLAGS = $(DEFAULTFLAGS)
+endif
 
 # Build all executables
 all: debug release valgrind

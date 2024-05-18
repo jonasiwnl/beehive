@@ -1,6 +1,7 @@
 *.gz
 *.o
 *.dSYM/
+*.exe
 beehive
 beehive_debug
 beehive_release
