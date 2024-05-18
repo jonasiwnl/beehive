@@ -10,19 +10,22 @@
 #include <CoreServices/CoreServices.h>
 #include <CoreGraphics/CoreGraphics.h>
 #include <ImageIO/ImageIO.h>
-#elif _WIN32 || _WIN64
+#elif _WIN32
 #include <stdio.h> // _popen, _pclose
 #endif
 
 using std::cout, std::cin, std::cerr; // IO
-using std::string, std::to_string, std::vector, std::pair; // Container
-using std::this_thread::sleep_for, std::chrono::milliseconds, std::atomic, std::thread; // Multithreading
+using std::string, std::to_string, std::vector, std::pair; // Containers
+using std::atomic, std::thread; // Multithreading
+using std::chrono::high_resolution_clock, std::chrono::milliseconds; // Timing
 
 
-constexpr auto FPS = "60";
 constexpr auto MPEG4_OUTPUT = "-vcodec mpeg4 output/video.mp4";
-// constexpr auto MPEGTS_OUTPUT = "-vcodec libx264 -preset ultrafast -f mpegts output/video.ts";
-// constexpr auto STREAM_OUTPUT = "rtsp://localhost:8554/stream";
+constexpr auto MPEGTS_OUTPUT = "-vcodec libx264 -preset ultrafast output/video.ts";
+constexpr auto STREAM_OUTPUT = "-f flv rtmp://localhost:3000/stream";
+
+constexpr auto FPS = 60;
+const auto FRAME_DURATION_MS = 1000 / FPS;
 
 struct ScreenCapture {
     // ---- CROSS PLATFORM CODE ---- //
@@ -75,8 +78,8 @@ struct ScreenCapture {
         string dimensions = to_string(window_width) + 'x' + to_string(window_height);
         string ffmpeg_cmd =
             "ffmpeg -hide_banner -y -f rawvideo -video_size " + dimensions +
-            " -pix_fmt bgra -re -i - -r " + FPS + ' ' + MPEG4_OUTPUT;
-    #ifdef _WIN32 || _WIN64
+            " -pix_fmt bgra -re -i - -r " + to_string(FPS) + ' ' + MPEG4_OUTPUT;
+    #ifdef _WIN32
         FILE* streampipe = _popen(ffmpeg_cmd.c_str(), "wb");
     #else
         FILE* streampipe = popen(ffmpeg_cmd.c_str(), "w");
@@ -85,14 +88,31 @@ struct ScreenCapture {
         thread quit_listener(&ScreenCapture::wait_for_quit_input, this);
 
         while (server_up_flag) {
+            auto start_time = high_resolution_clock::now();
+
+            // ---- image piping ---- //
         #ifdef __APPLE__
             osx_pipe_image(streampipe);
         #endif
-            sleep_for(milliseconds(100)); // TODO: how long should this be
+            // ---- end image piping ---- //
+
+            auto end_time = high_resolution_clock::now();
+            auto elapsed_time = end_time - start_time;
+
+            // convert elapsed time to milliseconds and subtract from max amount
+            long remaining_time_ms = FRAME_DURATION_MS - elapsed_time / milliseconds(1);
+
+            // If the image piping was too slow, don't sleep and just continue
+            if (remaining_time_ms <= 0) 
+                continue;
+
+            // Otherwise, sleep a bit to prevent unnecessary overhead
+            // 3/4 is just an arbitrary number I picked, I don't want to oversleep
+            std::this_thread::sleep_for(milliseconds( remaining_time_ms * 3/4 ));
         }
 
         quit_listener.join();
-    #ifdef _WIN32 || _WIN64
+    #ifdef _WIN32
         _pclose(streampipe);
     #else
         pclose(streampipe);
