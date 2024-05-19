@@ -8,14 +8,9 @@ using std::cerr;
 int main()
 {
     ScreenCapture capturer(false);
-    bool success;
 
     // Select a screen to stream from
-#ifdef __APPLE__
-    success = capturer.osx_display_active_windows();
-#elif _WIN32
-    success = capturer.windows_display_active_windows();
-#endif
+    bool success = capturer.display_active_windows();
 
     if (!success) {
         cerr << "ERROR: couldn't select window to stream from.\n";
@@ -23,7 +18,12 @@ int main()
     }
 
     // Start capturing
-    capturer.capture();
+    success = capturer.capture();
+
+    if (!success) {
+        cerr << "ERROR: failed to capture screen.\n";
+        return 1;
+    }
 
     return 0;
 }

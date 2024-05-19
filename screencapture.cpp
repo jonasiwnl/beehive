@@ -99,6 +99,20 @@ struct ScreenCapture {
     }
 
     /*
+     * Cross platform wrapper for OS-specific display_active_windows() functions.
+     */
+    bool display_active_windows()
+    {
+    #ifdef __APPLE__
+        return osx_display_active_windows();
+    #elif _WIN32
+        return win_display_active_windows();
+    #endif
+
+        return false;
+    }
+
+    /*
      * capture starts capturing video from selected window using ffmpeg.
      * it runs until 'q' or 'quit' is typed.
      */
@@ -128,7 +142,7 @@ struct ScreenCapture {
         #ifdef __APPLE__
             success = osx_pipe_image(streampipe);
         #elif _WIN32
-            success = windows_pipe_image(streampipe);
+            success = win_pipe_image(streampipe);
         #endif
 
             if (!success) {
@@ -279,12 +293,12 @@ struct ScreenCapture {
     LONG window_top;
 
     /*
-     * windows_pipe_image captures a single image on Windows using the wingdi.h library
+     * win_pipe_image captures a single image on Windows using the wingdi.h library
      * and pipes it to the `streampipe` argument.
      * 
      * Returns: boolean indicating whether or not the image could be created
      */
-    bool windows_pipe_image(FILE* streampipe)
+    bool win_pipe_image(FILE* streampipe)
     {
         bool success = true;
 
@@ -332,12 +346,12 @@ struct ScreenCapture {
     }
 
     /*
-     * windows_display_active_windows displays a list of user windows that can be streamed from on Windows,
+     * win_display_active_windows displays a list of user windows that can be streamed from on Windows,
      * using the Windows.h library.
      *
      * Returns: bool indicating whether or not this function succeeded.
      */
-    bool windows_display_active_windows()
+    bool win_display_active_windows()
     {
         vector<HWND> active_window_handles;
 
