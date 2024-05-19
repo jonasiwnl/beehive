@@ -12,7 +12,8 @@
 #include <ImageIO/ImageIO.h>
 #elif _WIN32
 #include <stdio.h> // _popen, _pclose
-#include <Windows.h>
+#include <windows.h>
+#include <wingdi.h>
 #endif
 
 using std::cout, std::cin, std::cerr; // IO
@@ -21,16 +22,18 @@ using std::atomic, std::thread; // Multithreading
 using std::chrono::high_resolution_clock, std::chrono::milliseconds; // Timing
 
 
-constexpr auto MPEG4_OUTPUT = "-vcodec mpeg4 output/video.mp4";
-constexpr auto MPEGTS_OUTPUT = "-vcodec libx264 -preset ultrafast output/video.ts";
 constexpr auto STREAM_OUTPUT = "-f flv rtmp://localhost:3000/stream";
+constexpr auto MPEGTS_OUTPUT = "-vcodec libx264 -preset ultrafast output/video.ts";
+constexpr auto MPEG4_OUTPUT = "-vcodec mpeg4 output/video.mp4"; // Default output is mp4
 
-constexpr auto FPS = 60;
+constexpr uint16_t FPS = 60;
 const auto FRAME_DURATION_MS = 1000 / FPS;
+constexpr size_t MAX_FRAMES = 7200; // Max frames in output video.
 
 #ifdef _WIN32 // This function must be global to pass as a function ptr to EnumWindows.
 // https://stackoverflow.com/questions/10246444/how-can-i-get-enumwindows-to-list-all-windows
-BOOL CALLBACK enum_window_callback(HWND hwnd, LPARAM active_window_ids_void_ptr) {
+BOOL CALLBACK enum_window_callback(HWND hwnd, LPARAM active_window_ids_void_ptr)
+{
     int length = GetWindowTextLength(hwnd) + 1;
     char * buffer = new char[length];
     GetWindowText(hwnd, buffer, length);
@@ -57,8 +60,9 @@ struct ScreenCapture {
     atomic<bool> server_up_flag;
     size_t window_height;
     size_t window_width;
+    bool stream;
 
-    ScreenCapture(): server_up_flag{true}, window_height{0}, window_width{0} {}
+    ScreenCapture(bool stream_in): server_up_flag{true}, window_height{0}, window_width{0}, stream{stream_in} {}
 
     /*
      * user_select_window_idx makes the user pick an window from [1, max_window_count]
@@ -100,7 +104,7 @@ struct ScreenCapture {
      */
     bool capture()
     {
-        string dimensions = to_string(window_width) + 'x' + to_string(window_height);
+        string dimensions = to_string(1920) + 'x' + to_string(1080);
         string ffmpeg_cmd =
             "ffmpeg -hide_banner -y -f rawvideo -video_size " + dimensions +
             " -pix_fmt bgra -re -i - -r " + to_string(FPS) + ' ' + MPEG4_OUTPUT;
@@ -112,6 +116,7 @@ struct ScreenCapture {
 
         thread quit_listener(&ScreenCapture::wait_for_quit_input, this);
 
+        size_t frame_count = 0;
         bool success;
         high_resolution_clock::time_point start_time, end_time;
         long long remaining_time_ms;
@@ -131,13 +136,23 @@ struct ScreenCapture {
                 continue;
             }
 
+            if (!stream) {
+                ++frame_count;
+                if (frame_count == MAX_FRAMES) {
+                    cout << "Frame count exceeded MAX_FRAMES value of "
+                         << MAX_FRAMES << ". Type any key then hit ENTER to exit.\n";
+                    server_up_flag = false;
+
+                    break;
+                }
+            }
+
             // ---- end image piping ---- //
 
             end_time = high_resolution_clock::now();
 
             // convert elapsed time to milliseconds and subtract from max amount
             remaining_time_ms = FRAME_DURATION_MS - (end_time - start_time) / milliseconds(1);
-            
 
             // If the image piping was too slow, don't sleep and just continue
             if (remaining_time_ms <= 0) 
@@ -269,7 +284,49 @@ struct ScreenCapture {
      */
     bool windows_pipe_image(FILE* streampipe)
     {
-        return true; // TODO
+        bool success = true;
+
+        // https://www.daniweb.com/programming/software-development/threads/119804/screenshot-maybe-win32api#post593378
+        HDC window_device_context = GetDC(0);
+        HDC target_device_context = CreateCompatibleDC(window_device_context);
+        HBITMAP hbitmap = CreateCompatibleBitmap(
+            window_device_context,
+            1920,
+            1080
+        );
+        // Select window bitmap into target DC
+        SelectObject(target_device_context, hbitmap);
+        // Copy bits from window DC to target DC
+        BitBlt(
+            target_device_context, 0, 0, 1920, 1080,
+            window_device_context, 0, 0, SRCCOPY
+        );
+
+        // This struct is needed as a config for getting raw bits from a bitmap
+        LPBITMAPINFO lp_bitmap_info = (LPBITMAPINFO) (new char[sizeof(BITMAPINFOHEADER) + 256 * sizeof(RGBQUAD)]);
+        ZeroMemory(&lp_bitmap_info->bmiHeader, sizeof(BITMAPINFOHEADER));
+        lp_bitmap_info->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+
+        // Populate lp_bitmap_info
+        GetDIBits(target_device_context, hbitmap, 0, 1080, NULL, lp_bitmap_info, DIB_RGB_COLORS); 
+        char * image_buffer = new char[lp_bitmap_info->bmiHeader.biSizeImage];
+        // DIBs are stored upside down in memory. Make height negative to flip image
+        lp_bitmap_info->bmiHeader.biHeight *= -1;
+        // Fill buffer
+        GetDIBits(target_device_context, hbitmap, 0, 1080, image_buffer, lp_bitmap_info, DIB_RGB_COLORS);
+
+        if (success)
+            // Pipe image
+            fwrite(image_buffer, 1, lp_bitmap_info->bmiHeader.biSizeImage, streampipe);
+
+        // Memory cleanup
+        ReleaseDC(NULL, window_device_context);
+        ReleaseDC(NULL, target_device_context);
+        DeleteObject(hbitmap);
+        DeleteObject(lp_bitmap_info);
+        delete[] image_buffer;
+
+        return success;
     }
 
     /*
@@ -287,6 +344,11 @@ struct ScreenCapture {
 
         size_t selected_window_idx = user_select_window_idx(active_window_ids.size());
         selected_window_id = active_window_ids[selected_window_idx];
+
+        RECT window_bounds;
+        GetWindowRect(selected_window_id, &window_bounds);
+        window_height = window_bounds.bottom - window_bounds.top;
+        window_width = window_bounds.right - window_bounds.left;
 
         return true;
     }
