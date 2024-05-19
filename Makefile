@@ -19,17 +19,24 @@ SOURCES = beehive.cpp
 OBJECTS     = $(SOURCES:%.cpp=%.o)
 
 # Default Flags
-DEFAULTFLAGS = -std=c++17 -Wconversion -Wall -Wextra -pedantic
+CXXFLAGS = -std=c++17 -Wconversion -Wall -Wextra -pedantic
+POSTFIXFLAGS =
+SANITIZEFLAGS = -fsanitize=address -fsanitize=undefined
 
-ifdef APPLE
-OSXFLAGS = -framework CoreFoundation -framework CoreGraphics -framework ImageIO -framework CoreServices
-CXXFLAGS = $(DEFAULTFLAGS) $(OSXFLAGS)
+# Operating system specific stuff
+ifeq ($(OS),Windows_NT)
+	POSTFIXFLAGS = -lgdi32
+	SANITIZEFLAGS =
 else
-CXXFLAGS = $(DEFAULTFLAGS)
+	UNAME_S = $(shell uname -s)
+	ifeq ($(UNAME_S),Darwin)
+		OSXFLAGS = -framework CoreFoundation -framework CoreGraphics -framework ImageIO -framework CoreServices
+		CXXFLAGS += $(OSXFLAGS)
+	endif
 endif
 
 # Build all executables
-all: debug release valgrind
+all: debug release
 
 debug:
 	make beehive_debug
@@ -37,22 +44,12 @@ debug:
 release:
 	make beehive_release
 
-valgrind:
-	make beehive_valgrind
-
 # make debug - will compile sources with $(CXXFLAGS) -g3 and -fsanitize
 #              flags also defines DEBUG and _GLIBCXX_DEBUG
 beehive_debug: beehive.cpp screencapture.cpp
-	$(CXX) $(CXXFLAGS) -g3 -DDEBUG -fsanitize=address -fsanitize=undefined -D_GLIBCXX_DEBUG $(SOURCES) -o $(EXECUTABLE)_debug
-
+	$(CXX) $(CXXFLAGS) -g3 -DDEBUG -D_GLIBCXX_DEBUG $(SANITIZEFLAGS) $(SOURCES) -o $(EXECUTABLE)_debug $(POSTFIXFLAGS)
 beehive_release: beehive.cpp screencapture.cpp
-	$(CXX) $(CXXFLAGS) -O3 $(SOURCES) -o $(EXECUTABLE)_release
-
-# make valgrind - will compile sources with $(CXXFLAGS) -g3 suitable for
-#                 CAEN or WSL (DOES NOT WORK ON MACOS).
-beehive_valgrind: CXXFLAGS += -g3
-beehive_valgrind: beehive.cpp screencapture.cpp
-	$(CXX) $(CXXFLAGS) $(SOURCES) -o $(EXECUTABLE)_valgrind
+	$(CXX) $(CXXFLAGS) -O3 $(SOURCES) -o $(EXECUTABLE)_release $(POSTFIXFLAGS)
 
 clean:
 	make clean_files

@@ -11,7 +11,7 @@
 #include <unistd.h> // close()
 #endif
 
-using std::cin;                 // IO
+using std::cin, std::cerr;      // IO
 using std::string, std::vector; // Containers
 using std::thread, std::atomic; // Multithreading
 
@@ -75,3 +75,27 @@ struct StreamServer {
             handler.join();
     }
 };
+
+bool run_server() {
+    int client_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (client_socket < 0) {
+        cerr << "ERROR: couldn't create socket.\n";
+        return false;
+    }
+
+    /* TODO 3. Listen for connections and accept them (as well as for interrupt) */
+    StreamServer ss = StreamServer(client_socket);
+    ss.listen_and_accept();
+#ifdef _WIN32
+    closesocket(client_socket);
+#else
+    close(client_socket);
+#endif
+
+    if (!ss.error_message.empty()) {
+        cerr << ss.error_message;
+        return false;
+    }
+
+    return true;
+}

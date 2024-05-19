@@ -12,7 +12,8 @@
 #include <ImageIO/ImageIO.h>
 #elif _WIN32
 #include <stdio.h> // _popen, _pclose
-#include <Windows.h>
+#include <windows.h>
+#include <wingdi.h>
 #endif
 
 using std::cout, std::cin, std::cerr; // IO
@@ -21,16 +22,18 @@ using std::atomic, std::thread; // Multithreading
 using std::chrono::high_resolution_clock, std::chrono::milliseconds; // Timing
 
 
-constexpr auto MPEG4_OUTPUT = "-vcodec mpeg4 output/video.mp4";
-constexpr auto MPEGTS_OUTPUT = "-vcodec libx264 -preset ultrafast output/video.ts";
 constexpr auto STREAM_OUTPUT = "-f flv rtmp://localhost:3000/stream";
+constexpr auto MPEGTS_OUTPUT = "-vcodec libx264 -preset ultrafast output/video.ts";
+constexpr auto MPEG4_OUTPUT = "-vcodec mpeg4 output/video.mp4"; // Default output is mp4
 
-constexpr auto FPS = 60;
+constexpr uint16_t FPS = 30;
+constexpr size_t MAX_FRAMES = 7200; // Max frames in output video.
 const auto FRAME_DURATION_MS = 1000 / FPS;
 
 #ifdef _WIN32 // This function must be global to pass as a function ptr to EnumWindows.
 // https://stackoverflow.com/questions/10246444/how-can-i-get-enumwindows-to-list-all-windows
-BOOL CALLBACK enum_window_callback(HWND hwnd, LPARAM active_window_ids_void_ptr) {
+BOOL CALLBACK enum_window_callback(HWND hwnd, LPARAM active_window_handles_void_ptr)
+{
     int length = GetWindowTextLength(hwnd) + 1;
     char * buffer = new char[length];
     GetWindowText(hwnd, buffer, length);
@@ -43,10 +46,10 @@ BOOL CALLBACK enum_window_callback(HWND hwnd, LPARAM active_window_ids_void_ptr)
         window_title == "Microsoft Text Input Application")
         return TRUE;
 
-    vector<HWND> * active_window_ids_ptr = reinterpret_cast<vector<HWND>*>(active_window_ids_void_ptr);
+    vector<HWND> * active_window_handles_ptr = reinterpret_cast<vector<HWND>*>(active_window_handles_void_ptr);
 
-    cout << active_window_ids_ptr->size() + 1 << ":  " << window_title << "      ";
-    active_window_ids_ptr->push_back(hwnd);
+    cout << active_window_handles_ptr->size() + 1 << ":  " << window_title << "      ";
+    active_window_handles_ptr->push_back(hwnd);
 
     return TRUE;
 }
@@ -55,10 +58,11 @@ BOOL CALLBACK enum_window_callback(HWND hwnd, LPARAM active_window_ids_void_ptr)
 struct ScreenCapture {
     // ---- CROSS PLATFORM CODE ---- //
     atomic<bool> server_up_flag;
-    size_t window_height;
-    size_t window_width;
+    unsigned int window_height;
+    unsigned int window_width;
+    bool stream;
 
-    ScreenCapture(): server_up_flag{true}, window_height{0}, window_width{0} {}
+    ScreenCapture(bool stream_in): server_up_flag{true}, window_height{0}, window_width{0}, stream{stream_in} {}
 
     /*
      * user_select_window_idx makes the user pick an window from [1, max_window_count]
@@ -95,6 +99,20 @@ struct ScreenCapture {
     }
 
     /*
+     * Cross platform wrapper for OS-specific display_active_windows() functions.
+     */
+    bool display_active_windows()
+    {
+    #ifdef __APPLE__
+        return osx_display_active_windows();
+    #elif _WIN32
+        return win_display_active_windows();
+    #endif
+
+        return false;
+    }
+
+    /*
      * capture starts capturing video from selected window using ffmpeg.
      * it runs until 'q' or 'quit' is typed.
      */
@@ -103,7 +121,7 @@ struct ScreenCapture {
         string dimensions = to_string(window_width) + 'x' + to_string(window_height);
         string ffmpeg_cmd =
             "ffmpeg -hide_banner -y -f rawvideo -video_size " + dimensions +
-            " -pix_fmt bgra -re -i - -r " + to_string(FPS) + ' ' + MPEG4_OUTPUT;
+            " -pix_fmt bgra -re -i - -r " + to_string(FPS) + ' ' + MPEGTS_OUTPUT;
     #ifdef _WIN32
         FILE* streampipe = _popen(ffmpeg_cmd.c_str(), "wb");
     #else
@@ -112,6 +130,7 @@ struct ScreenCapture {
 
         thread quit_listener(&ScreenCapture::wait_for_quit_input, this);
 
+        size_t frame_count = 0;
         bool success;
         high_resolution_clock::time_point start_time, end_time;
         long long remaining_time_ms;
@@ -123,12 +142,23 @@ struct ScreenCapture {
         #ifdef __APPLE__
             success = osx_pipe_image(streampipe);
         #elif _WIN32
-            success = windows_pipe_image(streampipe);
+            success = win_pipe_image(streampipe);
         #endif
 
             if (!success) {
                 cerr << "Couldn't pipe image. Continuing.\n";
                 continue;
+            }
+
+            if (!stream) {
+                ++frame_count;
+                if (frame_count == MAX_FRAMES) {
+                    cout << "Frame count exceeded MAX_FRAMES value of "
+                         << MAX_FRAMES << ". Type any key then hit ENTER to exit.\n";
+                    server_up_flag = false;
+
+                    break;
+                }
             }
 
             // ---- end image piping ---- //
@@ -137,15 +167,14 @@ struct ScreenCapture {
 
             // convert elapsed time to milliseconds and subtract from max amount
             remaining_time_ms = FRAME_DURATION_MS - (end_time - start_time) / milliseconds(1);
-            
 
             // If the image piping was too slow, don't sleep and just continue
             if (remaining_time_ms <= 0) 
                 continue;
 
             // Otherwise, sleep a bit to prevent unnecessary overhead
-            // 3/4 is just an arbitrary number I picked, I don't want to oversleep
-            std::this_thread::sleep_for(milliseconds( remaining_time_ms * 3/4 ));
+            // 1/2 is just an arbitrary number I picked, I don't want to oversleep
+            std::this_thread::sleep_for(milliseconds( remaining_time_ms * 1/2 ));
         }
 
         quit_listener.join();
@@ -248,8 +277,8 @@ struct ScreenCapture {
         CGRect window_bounds;
         CGRectMakeWithDictionaryRepresentation(window_id_and_bounds.second, &window_bounds);
 
-        window_height = static_cast<size_t>(CGRectGetHeight(window_bounds)*2);
-        window_width = static_cast<size_t>(CGRectGetWidth(window_bounds)*2);
+        window_height = static_cast<unsigned int>(CGRectGetHeight(window_bounds)*2);
+        window_width = static_cast<unsigned int>(CGRectGetWidth(window_bounds)*2);
 
         // Clean up memory
         CFRelease(window_infolist_ref);
@@ -259,34 +288,87 @@ struct ScreenCapture {
 #endif // ---- END OSX ONLY ---- //
 
 #ifdef _WIN32 // ---- Windows ONLY ---- //
-    HWND selected_window_id;
+    HWND selected_window_handle;
+    LONG window_left;
+    LONG window_top;
 
     /*
-     * windows_pipe_image captures a single image on Windows
+     * win_pipe_image captures a single image on Windows using the wingdi.h library
      * and pipes it to the `streampipe` argument.
      * 
      * Returns: boolean indicating whether or not the image could be created
      */
-    bool windows_pipe_image(FILE* streampipe)
+    bool win_pipe_image(FILE* streampipe)
     {
-        return true; // TODO
+        bool success = true;
+
+        // https://www.daniweb.com/programming/software-development/threads/119804/screenshot-maybe-win32api#post593378
+        HDC window_device_context = GetDC(HWND_DESKTOP);
+        HDC target_device_context = CreateCompatibleDC(window_device_context);
+        HBITMAP hbitmap = CreateCompatibleBitmap(
+            window_device_context,
+            window_width,
+            window_height
+        );
+        // Select window bitmap into target DC
+        SelectObject(target_device_context, hbitmap);
+        // Copy bits from window DC to target DC
+        BitBlt(
+            target_device_context, 0, 0, window_width, window_height,
+            window_device_context, window_left, window_top, SRCCOPY
+        );
+
+        // This struct is needed as a config for getting raw bits from a bitmap
+        LPBITMAPINFO lp_bitmap_info = (LPBITMAPINFO) (new char[sizeof(BITMAPINFOHEADER) + 256 * sizeof(RGBQUAD)]);
+        ZeroMemory(&lp_bitmap_info->bmiHeader, sizeof(BITMAPINFOHEADER));
+        lp_bitmap_info->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+
+        // Populate lp_bitmap_info
+        GetDIBits(target_device_context, hbitmap, 0, window_height, NULL, lp_bitmap_info, DIB_RGB_COLORS); 
+        char * image_buffer = new char[lp_bitmap_info->bmiHeader.biSizeImage];
+        // DIBs are stored upside down in memory. Make height negative to flip image
+        lp_bitmap_info->bmiHeader.biHeight *= -1;
+        // Fill buffer
+        GetDIBits(target_device_context, hbitmap, 0, window_height, image_buffer, lp_bitmap_info, DIB_RGB_COLORS);
+
+        if (success)
+            // Pipe image
+            fwrite(image_buffer, 1, lp_bitmap_info->bmiHeader.biSizeImage, streampipe);
+
+        // Memory cleanup
+        ReleaseDC(NULL, window_device_context);
+        ReleaseDC(NULL, target_device_context);
+        DeleteObject(hbitmap);
+        DeleteObject(lp_bitmap_info);
+        delete[] image_buffer;
+
+        return success;
     }
 
     /*
-     * windows_display_active_windows displays a list of user windows that can be streamed from on Windows,
+     * win_display_active_windows displays a list of user windows that can be streamed from on Windows,
      * using the Windows.h library.
      *
      * Returns: bool indicating whether or not this function succeeded.
      */
-    bool windows_display_active_windows()
+    bool win_display_active_windows()
     {
-        vector<HWND> active_window_ids;
+        vector<HWND> active_window_handles;
 
-        EnumDesktopWindows(NULL, enum_window_callback, reinterpret_cast<LPARAM>(&active_window_ids));
+        EnumDesktopWindows(NULL, enum_window_callback, reinterpret_cast<LPARAM>(&active_window_handles));
         cout << '\n';
 
-        size_t selected_window_idx = user_select_window_idx(active_window_ids.size());
-        selected_window_id = active_window_ids[selected_window_idx];
+        size_t selected_window_idx = user_select_window_idx(active_window_handles.size());
+        selected_window_handle = active_window_handles[selected_window_idx];
+
+        SetForegroundWindow(selected_window_handle);
+
+        RECT window_bounds;
+        GetWindowRect(selected_window_handle, &window_bounds);
+        window_height = window_bounds.bottom - window_bounds.top;
+        window_width = window_bounds.right - window_bounds.left;
+        window_left = window_bounds.left;
+        window_top = window_bounds.top;
 
         return true;
     }
