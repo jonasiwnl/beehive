@@ -21,10 +21,12 @@ OBJECTS     = $(SOURCES:%.cpp=%.o)
 # Default Flags
 CXXFLAGS = -std=c++17 -Wconversion -Wall -Wextra -pedantic
 POSTFIXFLAGS =
+SANITIZEFLAGS = -fsanitize=address -fsanitize=undefined
 
 # Operating system specific stuff
 ifeq ($(OS),Windows_NT)
 	POSTFIXFLAGS = -lgdi32
+	SANITIZEFLAGS =
 else
 	UNAME_S = $(shell uname -s)
 	ifeq ($(UNAME_S),Darwin)
@@ -45,8 +47,7 @@ release:
 # make debug - will compile sources with $(CXXFLAGS) -g3 and -fsanitize
 #              flags also defines DEBUG and _GLIBCXX_DEBUG
 beehive_debug: beehive.cpp screencapture.cpp
-	$(CXX) $(CXXFLAGS) -g3 -DDEBUG -D_GLIBCXX_DEBUG $(SOURCES) -o $(EXECUTABLE)_debug $(POSTFIXFLAGS)
-# -fsanitize=address -fsanitize=undefined
+	$(CXX) $(CXXFLAGS) -g3 -DDEBUG -D_GLIBCXX_DEBUG $(SANITIZEFLAGS) $(SOURCES) -o $(EXECUTABLE)_debug $(POSTFIXFLAGS)
 beehive_release: beehive.cpp screencapture.cpp
 	$(CXX) $(CXXFLAGS) -O3 $(SOURCES) -o $(EXECUTABLE)_release $(POSTFIXFLAGS)
 
