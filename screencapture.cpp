@@ -110,7 +110,7 @@ struct ScreenCapture {
         return win_display_active_windows();
     #endif
 
-        return false;
+        return true;
     }
 
     /*
