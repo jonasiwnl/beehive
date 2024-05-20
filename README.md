@@ -1,5 +1,5 @@
 # Beehive (WIP)
-A screen recording tool with the capability to save to disk (MP4 or MPTS) or stream to a server (RTMP).
+A screen recording tool that can save to disk (MP4 or MPTS) or stream to a server (RTMP).
 
 ## Dependencies
 `ffmpeg` is the only dependency. It needs to be installed and should be in PATH (beehive will run commands like `ffmpeg ...`).
