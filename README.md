@@ -5,7 +5,7 @@ A screen recording tool with the capability to save to disk (MP4 or MPTS) or str
 `ffmpeg` is the only dependency. It needs to be installed and should be in PATH (beehive will run commands like `ffmpeg ...`).
 
 ## Usage
-Type `make release` to build the executable, then type `./beehive_release` to run it.
+Type `make release` to build the executable, then type `./beehive_release` to run it. Type `q` or `quit` into stdin to quit.
 
 ## Output Formats
 with my minimal testing, i've found that mpeg4 has lower overhead, but with much worse quality output (color, bitrate, etc). mpegts (using h264) has better quality with more overhead.
@@ -13,6 +13,7 @@ with my minimal testing, i've found that mpeg4 has lower overhead, but with much
 ## Known Issues
 - On Windows, other windows can overlay streaming one
 - 2 window instances for fullscreen VSCode on OSX
+- Deprecated functions (GetProcessForPID, SetFrontProcess, CGWindowListCreateImage) on OSX
 
 ## Performance stuff to test
 - producer and consumer threads for creating images and piping them

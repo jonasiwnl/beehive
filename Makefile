@@ -30,7 +30,7 @@ ifeq ($(OS),Windows_NT)
 else
 	UNAME_S = $(shell uname -s)
 	ifeq ($(UNAME_S),Darwin)
-		OSXFLAGS = -framework CoreFoundation -framework CoreGraphics -framework ImageIO -framework CoreServices
+		OSXFLAGS = -framework CoreFoundation -framework CoreGraphics -framework ImageIO -framework CoreServices -framework ApplicationServices
 		CXXFLAGS += $(OSXFLAGS)
 	endif
 endif
