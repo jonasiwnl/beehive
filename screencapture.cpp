@@ -10,6 +10,7 @@
 #include <CoreServices/CoreServices.h>
 #include <CoreGraphics/CoreGraphics.h>
 #include <ImageIO/ImageIO.h>
+#include <ApplicationServices/ApplicationServices.h> // SetFrontProcess, GetProcessForPID
 #elif _WIN32
 #include <stdio.h> // _popen, _pclose
 #include <windows.h>
@@ -192,6 +193,15 @@ struct ScreenCapture {
     CGWindowID selected_window_id;
 
     /*
+     * Structure to hold information about active OSX windows.
+     */
+    struct ActiveWindowData {
+        CFNumberRef id;
+        CFDictionaryRef bounds;
+        CFNumberRef pid;
+    };
+
+    /*
      * osx_pipe_image captures a single image on OSX using the CoreGraphics.h library
      * and pipes it to the `streampipe` argument.
      * 
@@ -242,7 +252,7 @@ struct ScreenCapture {
         CFIndex window_count = CFArrayGetCount(window_infolist_ref);
 
         // Window IDs that can actually be streamed from and their bounds, as a dict
-        vector<pair<CFNumberRef, CFDictionaryRef>> active_window_ids;
+        vector<ActiveWindowData> active_windows;
 
         if (window_infolist_ref == NULL) {
             cerr << "ERROR: couldn't get window list.\n";
@@ -262,20 +272,33 @@ struct ScreenCapture {
 
             CFStringRef window_name_ref = (CFStringRef) CFDictionaryGetValue(window_info_ref, kCGWindowOwnerName);
             // This window can be streamed from.
-            active_window_ids.push_back({ (CFNumberRef) CFDictionaryGetValue(window_info_ref, kCGWindowNumber),
-                                          (CFDictionaryRef) CFDictionaryGetValue(window_info_ref, kCGWindowBounds) });
-            cout << active_window_ids.size() << ". "
+            active_windows.push_back({
+                    (CFNumberRef) CFDictionaryGetValue(window_info_ref, kCGWindowNumber),
+                    (CFDictionaryRef) CFDictionaryGetValue(window_info_ref, kCGWindowBounds),
+                    (CFNumberRef) CFDictionaryGetValue(window_info_ref, kCGWindowOwnerPID)
+            });
+            cout << active_windows.size() << ". "
                 << CFStringGetCStringPtr(window_name_ref, kCFStringEncodingUTF8) << "      ";
         }
         cout << '\n';
 
         // Get ID of selected window.
-        size_t selected_window_idx = user_select_window_idx(active_window_ids.size());
-        pair<CFNumberRef, CFDictionaryRef> window_id_and_bounds = active_window_ids[selected_window_idx];
-        CFNumberGetValue(window_id_and_bounds.first, kCGWindowIDCFNumberType, &selected_window_id);
+        size_t selected_window_idx = user_select_window_idx(active_windows.size());
+        ActiveWindowData window_data = active_windows[selected_window_idx];
+        CFNumberGetValue(window_data.id, kCGWindowIDCFNumberType, &selected_window_id);
 
+        // Bring window to foreground
+        int pid;
+        ProcessSerialNumber psn;
+
+        CFNumberGetValue(window_data.pid, kCFNumberIntType, &pid);
+        GetProcessForPID(pid, &psn);
+
+        SetFrontProcess(&psn);
+
+        // Set bounds of ScreenCapture struct
         CGRect window_bounds;
-        CGRectMakeWithDictionaryRepresentation(window_id_and_bounds.second, &window_bounds);
+        CGRectMakeWithDictionaryRepresentation(window_data.bounds, &window_bounds);
 
         window_height = static_cast<unsigned int>(CGRectGetHeight(window_bounds)*2);
         window_width = static_cast<unsigned int>(CGRectGetWidth(window_bounds)*2);
@@ -361,6 +384,7 @@ struct ScreenCapture {
         size_t selected_window_idx = user_select_window_idx(active_window_handles.size());
         selected_window_handle = active_window_handles[selected_window_idx];
 
+        // Bring window to foreground
         SetForegroundWindow(selected_window_handle);
 
         RECT window_bounds;
