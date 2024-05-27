@@ -1,5 +1,5 @@
 # Beehive (WIP)
-A screen recording tool that can save to disk (MP4 or MPTS) or stream to a server (RTMP).
+A screen recording tool that can save to disk (MP4 or MPTS) or stream to a server (RTP).
 
 ## Dependencies
 `ffmpeg` is the only dependency. It needs to be installed and should be in PATH (beehive will run commands like `ffmpeg ...`).
@@ -17,5 +17,6 @@ with my minimal testing, i've found that mpeg4 has lower overhead, but with much
 
 ## Performance stuff to test
 - producer and consumer threads for creating images and piping them
+- stream with RTSP instead of RTP?
 - CGDisplayStream vs individual CGWindowListCreateImage calls
 - kCGWindowImageNominalResolution vs kCGWindowImageBestResolution
