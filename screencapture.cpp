@@ -23,7 +23,7 @@ using std::atomic, std::thread; // Multithreading
 using std::chrono::high_resolution_clock, std::chrono::milliseconds; // Timing
 
 
-constexpr auto STREAM_OUTPUT = "-f flv rtmp://localhost:3000/stream";
+constexpr auto STREAM_OUTPUT = "-sdp_file output/video_stream -f rtp rtp://0.0.0.0:5050";
 constexpr auto MPEGTS_OUTPUT = "-vcodec libx264 -preset ultrafast output/video.ts";
 constexpr auto MPEG4_OUTPUT = "-vcodec mpeg4 output/video.mp4"; // Default output is mp4
 
@@ -59,11 +59,15 @@ BOOL CALLBACK enum_window_callback(HWND hwnd, LPARAM active_window_handles_void_
 struct ScreenCapture {
     // ---- CROSS PLATFORM CODE ---- //
     atomic<bool> server_up_flag;
+
     unsigned int window_height;
     unsigned int window_width;
-    bool stream;
 
-    ScreenCapture(bool stream_in): server_up_flag{true}, window_height{0}, window_width{0}, stream{stream_in} {}
+    bool stream;
+    bool continue_on_fail;
+
+    ScreenCapture(bool stream_in, bool continue_on_fail_in): server_up_flag{true}, window_height{0}, window_width{0},
+                                                            stream{stream_in}, continue_on_fail(continue_on_fail_in) {}
 
     /*
      * user_select_window_idx makes the user pick an window from [1, max_window_count]
@@ -110,7 +114,7 @@ struct ScreenCapture {
         return win_display_active_windows();
     #endif
 
-        return false;
+        return true;
     }
 
     /*
@@ -122,7 +126,7 @@ struct ScreenCapture {
         string dimensions = to_string(window_width) + 'x' + to_string(window_height);
         string ffmpeg_cmd =
             "ffmpeg -hide_banner -y -f rawvideo -video_size " + dimensions +
-            " -pix_fmt bgra -re -i - -r " + to_string(FPS) + ' ' + MPEGTS_OUTPUT;
+            " -pix_fmt bgra -re -i - -r " + to_string(FPS) + ' ' + STREAM_OUTPUT;
     #ifdef _WIN32
         FILE* streampipe = _popen(ffmpeg_cmd.c_str(), "wb");
     #else
@@ -147,8 +151,11 @@ struct ScreenCapture {
         #endif
 
             if (!success) {
-                cerr << "Couldn't pipe image. Continuing.\n";
-                continue;
+                cerr << "ERROR: Couldn't pipe image. Continuing.\n";
+                if (!continue_on_fail) {
+                    server_up_flag = false;
+                    break;
+                }
             }
 
             if (!stream) {

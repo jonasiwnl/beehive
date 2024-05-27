@@ -7,7 +7,7 @@ using std::cerr;
 
 int main()
 {
-    ScreenCapture capturer(false);
+    ScreenCapture capturer(true, false);
 
     // Select a screen to stream from
     bool success = capturer.display_active_windows();
