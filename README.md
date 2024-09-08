@@ -10,7 +10,7 @@ A screen recording tool that can save to disk (MP4 or MPTS) or stream to a serve
 Type `make release` to build the executable, then type `./beehive_release` to run it. Type `q` or `quit` into stdin to quit.
 
 ### Streaming
-First, you need a RTSP server. Easiest one to use out of the box is [mediamtx](https://github.com/bluenviron/mediamtx). Then, run beehive like above with RTSP output. Finally, use `viewstream.py` to watch the stream. Global link using `ngrok` soon...
+First, you need a RTSP server. Easiest one to use out of the box is [mediamtx](https://github.com/bluenviron/mediamtx). Expose it globally with something like `ngrok`. Then, run beehive like above with RTSP output. Finally, use `viewstream.py` to watch the stream.
 
 ## Output Formats
 with my minimal testing, i've found that mpeg4 has lower overhead, but with much worse quality output (color, bitrate, etc). mpegts (using h264) has better quality with more overhead.
