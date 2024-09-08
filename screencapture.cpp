@@ -23,7 +23,8 @@ using std::atomic, std::thread; // Multithreading
 using std::chrono::high_resolution_clock, std::chrono::milliseconds; // Timing
 
 
-constexpr auto STREAM_OUTPUT = "-sdp_file output/video_stream -f rtp rtp://0.0.0.0:5050";
+constexpr auto RTP_OUTPUT = "-sdp_file output/video_stream -f rtp rtp://0.0.0.0:5050";
+constexpr auto RTSP_OUTPUT = "-rtsp_transport tcp -f rtsp rtsp://0.0.0.0:8554/stream";
 constexpr auto MPEGTS_OUTPUT = "-vcodec libx264 -preset ultrafast output/video.ts";
 constexpr auto MPEG4_OUTPUT = "-vcodec mpeg4 output/video.mp4"; // Default output is mp4
 
@@ -126,7 +127,7 @@ struct ScreenCapture {
         string dimensions = to_string(window_width) + 'x' + to_string(window_height);
         string ffmpeg_cmd =
             "ffmpeg -hide_banner -y -f rawvideo -video_size " + dimensions +
-            " -pix_fmt bgra -re -i - -r " + to_string(FPS) + ' ' + STREAM_OUTPUT;
+            " -pix_fmt bgra -re -i - -r " + to_string(FPS) + ' ' + RTSP_OUTPUT;
     #ifdef _WIN32
         FILE* streampipe = _popen(ffmpeg_cmd.c_str(), "wb");
     #else
@@ -222,14 +223,18 @@ struct ScreenCapture {
             selected_window_id,
             kCGWindowImageBestResolution | kCGWindowImageBoundsIgnoreFraming
         );
+        if (!img) return false;
 
-        if (CGImageGetBitsPerPixel(img) != 32 || CGImageGetBitsPerComponent(img) != 8) {
+        size_t width = CGImageGetWidth(img);
+        size_t height = CGImageGetHeight(img);
+
+        if (!width || !height || CGImageGetBitsPerPixel(img) != 32 || CGImageGetBitsPerComponent(img) != 8) {
             CGImageRelease(img);
             return false;
         }
 
         CFDataRef img_data = CGDataProviderCopyData(CGImageGetDataProvider(img));
-        const UInt8 * img_data_ptr = (const UInt8 *) CFDataGetBytePtr(img_data);
+        const UInt8 * img_data_ptr = CFDataGetBytePtr(img_data);
 
         size_t data_length = static_cast<size_t>(CFDataGetLength(img_data));
 
@@ -284,8 +289,9 @@ struct ScreenCapture {
                     (CFDictionaryRef) CFDictionaryGetValue(window_info_ref, kCGWindowBounds),
                     (CFNumberRef) CFDictionaryGetValue(window_info_ref, kCGWindowOwnerPID)
             });
+            const char * window_name = CFStringGetCStringPtr(window_name_ref, kCFStringEncodingUTF8);
             cout << active_windows.size() << ". "
-                << CFStringGetCStringPtr(window_name_ref, kCFStringEncodingUTF8) << "      ";
+                << (window_name != nullptr ? window_name : "Undefined window, sorry!") << "      ";
         }
         cout << '\n';
 
