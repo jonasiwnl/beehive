@@ -19,10 +19,8 @@ with my minimal testing, i've found that mpeg4 has lower overhead, but with much
 - Most CG functions are deprecated on Mac. This results in incomprehensible video. Can't do anything about this.
 - On Windows, other windows can overlay streaming one
 - 2 window instances for fullscreen VSCode on OSX
-- Deprecated functions (GetProcessForPID, SetFrontProcess, CGWindowListCreateImage) on OSX
 
 ## Performance stuff to test
 - producer and consumer threads for creating images and piping them
-- stream with RTSP instead of RTP?
 - CGDisplayStream vs individual CGWindowListCreateImage calls
 - kCGWindowImageNominalResolution vs kCGWindowImageBestResolution

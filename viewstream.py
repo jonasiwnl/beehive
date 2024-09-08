@@ -2,7 +2,7 @@ import cv2
 
 
 def main():
-    cap = cv2.VideoCapture("rtsp://0.0.0.0:8554/stream")
+    cap = cv2.VideoCapture("rtsp://8199-108-30-53-54.ngrok-free.app/stream")
 
     while cap.isOpened():
         _, frame = cap.read()
